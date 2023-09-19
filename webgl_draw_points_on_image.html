@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>WebGL在一张照片上绘制一堆点</title>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="padding: 10px; font-weight: bolder;">总共 <span style="color: blue;" id="myspan"></span> 个点</div>
+    <canvas id="myCanvas" width="800" height="800"></canvas>
+
+    <script>
+        var imageurl = 'https://download.mashaojie.cn/image/avatar.jpg'
+
+        class WebGLPoints {
+            constructor(photoUrl, pointsCount = 10000) {
+                this.canvas = document.getElementById('myCanvas');
+                this.pointsCount = pointsCount
+                this.photoUrl = photoUrl;
+                this.gl = this.canvas.getContext('webgl');
+                this.gl.enable(this.gl.BLEND);
+                this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+
+                this.initPoints()
+                this.initImage()
+            }
+
+            createProgram(vsSource, fsSource) {
+                //创建程序对象
+                let program = this.gl.createProgram();
+
+                let vertexShader = this.gl.createShader(this.gl.VERTEX_SHADER);
+                this.gl.shaderSource(vertexShader, vsSource);
+                this.gl.compileShader(vertexShader);
+
+                let fragmentShader = this.gl.createShader(this.gl.FRAGMENT_SHADER);
+                this.gl.shaderSource(fragmentShader, fsSource);
+                this.gl.compileShader(fragmentShader);
+
+                //把顶点着色对象装进程序对象中
+                this.gl.attachShader(program, vertexShader);
+                //把片元着色对象装进程序对象中
+                this.gl.attachShader(program, fragmentShader);
+                //连接webgl上下文对象和程序对象
+                this.gl.linkProgram(program);
+                return program;
+            }
+
+            initImage() {
+                // 定义顶点着色器代码
+                let vertexShaderSource = `
+                attribute vec2 a_position;
+                attribute vec2 a_texCoord;
+                varying vec2 v_texCoord;
+
+                void main() {
+                    gl_Position = vec4(a_position, 0.0, 1.0);
+                    v_texCoord = a_texCoord;
+                    gl_PointSize = 5.0;
+                }
+            `;
+
+                // 定义片元着色器代码
+                let fragmentShaderSource = `
+                precision mediump float;
+                uniform sampler2D u_texture;
+                varying vec2 v_texCoord;
+
+                void main() {
+                    vec2 flippedTexCoord = vec2(v_texCoord.x, 1.0 - v_texCoord.y);
+                    gl_FragColor = texture2D(u_texture, flippedTexCoord);
+                }
+            `;
+
+                // 创建着色器程序
+                this.programImage = this.createProgram(vertexShaderSource, fragmentShaderSource)
+                this.gl.useProgram(this.programImage);
+
+                this.positions = [
+                    -1, -1,
+                    1, -1,
+                    -1, 1,
+                    1, 1,
+                ];
+                // 创建顶点缓冲区
+                this.positionBuffer = this.gl.createBuffer();
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.positions), this.gl.STATIC_DRAW);
+                this.positionAttributeLocation = this.gl.getAttribLocation(this.programImage, 'a_position');
+                this.gl.vertexAttribPointer(this.positionAttributeLocation, 2, this.gl.FLOAT, false, 0, 0);
+                this.gl.enableVertexAttribArray(this.positionAttributeLocation);
+
+                this.texCoords = [
+                    0, 0,
+                    1, 0,
+                    0, 1,
+                    1, 1,
+                ];
+
+                // 创建纹理坐标缓冲区
+                this.texCoordBuffer = this.gl.createBuffer();
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.texCoordBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.texCoords), this.gl.STATIC_DRAW);
+                this.texCoordAttributeLocation = this.gl.getAttribLocation(this.programImage, 'a_texCoord');
+                this.gl.vertexAttribPointer(this.texCoordAttributeLocation, 2, this.gl.FLOAT, false, 0, 0);
+                this.gl.enableVertexAttribArray(this.texCoordAttributeLocation);
+
+                // 创建纹理
+                this.texture = this.gl.createTexture();
+                this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
+                this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+                this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+                this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+                this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+
+                // 加载图像并绑定到纹理
+                this.image = new Image();
+                this.image.crossOrigin = "anonymous";
+                this.image.onload = () => {
+                    // this.gl.useProgram(this.programImage);
+
+                    // this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
+                    // this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.positions), this.gl.STATIC_DRAW);
+                    // this.gl.vertexAttribPointer(this.positionAttributeLocation, 2, this.gl.FLOAT, false, 0, 0);
+
+                    // this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.texCoordBuffer);
+                    // this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.texCoords), this.gl.STATIC_DRAW);
+                    // this.gl.vertexAttribPointer(this.texCoordAttributeLocation, 2, this.gl.FLOAT, false, 0, 0);
+
+                    // this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
+                    // this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, this.image);
+                    // this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
+
+                    this.drawCanvas()
+                };
+                this.image.src = this.photoUrl
+            }
+
+            initPoints() {
+                // 定义顶点着色器代码
+                let vertexShaderSourcePoint = `
+                attribute vec2 a_position;
+                attribute float a_radius;
+                attribute vec4 a_color;
+                varying vec4 v_color;
+
+                void main() {
+                    gl_Position = vec4(a_position, 0.0, 1.0);
+                    gl_PointSize = a_radius;
+                    v_color = a_color;
+                }
+            `;
+
+                // 定义片元着色器代码
+                let fragmentShaderSourcePoint = `
+                precision mediump float;
+                varying vec4 v_color;
+
+                void main() {
+                    gl_FragColor = v_color;
+                }
+            `;
+
+                // 创建着色器程序
+                this.programPoint = this.createProgram(vertexShaderSourcePoint, fragmentShaderSourcePoint)
+                this.gl.useProgram(this.programPoint);
+
+                // 定义顶点数据和属性数据
+                this.vertices = [];
+                this.radii = [];
+                this.colors = [];
+
+                for (let i = 0; i < this.pointsCount; i++) {
+                    this.vertices.push(0.0, 0.0);
+                    this.radii.push(1.0);
+                    this.colors.push(0.0, 0.0, 0.0, 0.0);
+                }
+
+                // 创建缓冲区对象并传递数据
+                this.vertexBuffer = this.gl.createBuffer();
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.vertices), this.gl.STATIC_DRAW);
+                this.aPosition = this.gl.getAttribLocation(this.programPoint, 'a_position');
+                this.gl.vertexAttribPointer(this.aPosition, 2, this.gl.FLOAT, false, 0, 0);
+                this.gl.enableVertexAttribArray(this.aPosition);
+
+
+                this.radiusBuffer = this.gl.createBuffer();
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.radiusBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.radii), this.gl.STATIC_DRAW);
+                this.aRadius = this.gl.getAttribLocation(this.programPoint, 'a_radius');
+                this.gl.vertexAttribPointer(this.aRadius, 1, this.gl.FLOAT, false, 0, 0);
+                this.gl.enableVertexAttribArray(this.aRadius);
+
+                this.colorBuffer = this.gl.createBuffer();
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.colorBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.colors), this.gl.STATIC_DRAW);
+                this.aColor = this.gl.getAttribLocation(this.programPoint, 'a_color');
+                this.gl.vertexAttribPointer(this.aColor, 4, this.gl.FLOAT, false, 0, 0);
+                this.gl.enableVertexAttribArray(this.aColor);
+            }
+
+            drawCanvas() {
+                if (this.image) {
+                    this.gl.useProgram(this.programImage);
+
+                    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
+                    this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.positions), this.gl.STATIC_DRAW);
+                    this.gl.vertexAttribPointer(this.positionAttributeLocation, 2, this.gl.FLOAT, false, 0, 0);
+
+                    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.texCoordBuffer);
+                    this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.texCoords), this.gl.STATIC_DRAW);
+                    this.gl.vertexAttribPointer(this.texCoordAttributeLocation, 2, this.gl.FLOAT, false, 0, 0);
+
+                    this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
+                    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, this.image);
+                    this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
+                }
+
+
+                this.gl.useProgram(this.programPoint);
+
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.vertices), this.gl.STATIC_DRAW);
+                this.gl.vertexAttribPointer(this.aPosition, 2, this.gl.FLOAT, false, 0, 0);
+
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.radiusBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.radii), this.gl.STATIC_DRAW);
+                this.gl.vertexAttribPointer(this.aRadius, 1, this.gl.FLOAT, false, 0, 0);
+
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.colorBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.colors), this.gl.STATIC_DRAW);
+                this.gl.vertexAttribPointer(this.aColor, 4, this.gl.FLOAT, false, 0, 0);
+
+
+                this.gl.drawArrays(this.gl.POINTS, 0, this.vertices.length / 2);
+
+                // requestAnimationFrame(this.drawCanvas.bind(this));
+            }
+
+            updatePoints(points) {
+                for (let i = 0; i < this.pointsCount; i++) {
+                    if (i < points.length) {
+                        let point = points[i]
+                        this.vertices[i * 2] = point.x;
+                        this.vertices[i * 2 + 1] = point.y;
+                        this.radii[i] = point.radius
+                        this.colors[i * 4] = point.r;
+                        this.colors[i * 4 + 1] = point.g;
+                        this.colors[i * 4 + 2] = point.b;
+                        this.colors[i * 4 + 3] = point.alpha;
+                    } else {
+                        this.colors[i * 4] = 0.0;
+                        this.colors[i * 4 + 1] = 0.0;
+                        this.colors[i * 4 + 2] = 0.0;
+                        this.colors[i * 4 + 3] = 0.0;
+                    }
+                }
+
+                this.drawCanvas()
+            }
+        }
+
+        var image = imageurl
+        const webglPoints = new WebGLPoints(image, 100000); // 替换为您的照片贴图路径
+
+        const myspan = document.getElementById("myspan")
+        myspan.innerHTML = 0
+        setInterval(() => {
+            let points = []
+            let count = Math.floor(Math.random() * 100000)
+
+            console.error("count -> ", count)
+
+            myspan.innerHTML = count
+            for (let i = 0; i < count; i++) {
+                points.push({
+                    x: Math.random() * 2 - 1,
+                    y: Math.random() * 2 - 1,
+                    radius: 5,
+                    r: Math.random(),
+                    g: Math.random(),
+                    b: Math.random(),
+                    alpha: Math.random()
+                })
+            }
+
+            webglPoints.updatePoints(points)
+        }, 1000);
+
+    </script>
+</body>
+
+</html>
